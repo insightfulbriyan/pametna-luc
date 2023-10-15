@@ -91,26 +91,6 @@ void callback(char *topic, byte *message, unsigned int length) {
     }
 }
 
-void setup_wifi() {
-    delay(10);
-    // We start by connecting to a WiFi network
-    Serial.println();
-    Serial.print("Connecting to ");
-    Serial.println(ssid);
-
-    WiFi.begin(ssid, password);
-
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
-        Serial.print(".");
-    }
-
-    Serial.println("");
-    Serial.println("WiFi connected");
-    Serial.println("IP address: ");
-    Serial.println(WiFi.localIP());
-}
-
 boolean reconnect() {
     Serial.println("Reconnection attemp");
     if (client.connect("ESP32", mqtt_usernme, mqtt_password)) {
@@ -130,10 +110,10 @@ void setup() {
     Serial.begin(115200);
     client.setServer(mqtt_server, 8883);
     client.setCallback(callback);
-
     WiFi.begin(ssid, password);
+    delay(1000);
 
-    delay(1500);
+
     lastReconnectAttempt = 0;
 }
 
@@ -141,10 +121,8 @@ void loop() {
     long now = millis();
     if (!client.connected()) {
         if (now - lastReconnectAttempt > 5000) {
-            lastReconnectAttempt = now;
-            if (reconnect()) {
-                lastReconnectAttempt = 0;
-            }
+            reconnect();
+            lastReconnectAttempt = millis();
         }
     } else {
         client.loop();
