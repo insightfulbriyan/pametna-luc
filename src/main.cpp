@@ -150,9 +150,8 @@ void loop() {
         client.loop();
     }
 
-    if(now - btn.lastRead > 500){
+    if(now - btn.lastRead > 300){
         bool old_state = btn.state;
-        delay(100);
 
         if(old_state != btn.read() && btn.state == true){
             jaka.toggleLuc();
