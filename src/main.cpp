@@ -52,13 +52,13 @@ public:
 
     Stikalo(int input_pin){
         pin = input_pin;
-        pinMode(input_pin, OUTPUT);
-        state = digitalRead(input_pin);
+        pinMode(input_pin, INPUT_PULLUP);
+        state = !digitalRead(input_pin);
         lastRead = millis();
     }
 
     bool read(){
-        state = digitalRead(pin);
+        state = !digitalRead(pin);
         lastRead = millis();
         return state;
     }
