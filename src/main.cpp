@@ -22,14 +22,15 @@ bool lucState = LOW;
 
 void setLuc(bool state) {
     digitalWrite(lucPin, state);
-	Serial.println(state ? "on" : "off");
+    Serial.println(state ? "on" : "off");
 }
 
 void toggleLuc() {
-	lucState = !lucState;
+    lucState = !lucState;
     digitalWrite(lucPin, lucState);
-	Serial.println(lucState ? "on" : "off");
+    Serial.println(lucState ? "on" : "off");
 }
+
 void callback(char *topic, byte *message, unsigned int length) {
     Serial.print("Message arrived on topic: ");
     Serial.print(topic);
@@ -92,8 +93,6 @@ boolean reconnect() {
 
     return client.connected();
 }
-
-
 
 void setup() {
     Serial.begin(115200);
