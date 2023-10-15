@@ -20,6 +20,16 @@ long lastReconnectAttempt = 0;
 int lucPin = 22;
 bool lucState = LOW;
 
+void setLuc(bool state) {
+    digitalWrite(lucPin, state);
+	Serial.println(state ? "on" : "off");
+}
+
+void toggleLuc() {
+	lucState = !lucState;
+    digitalWrite(lucPin, lucState);
+	Serial.println(lucState ? "on" : "off");
+}
 void callback(char *topic, byte *message, unsigned int length) {
     Serial.print("Message arrived on topic: ");
     Serial.print(topic);
@@ -39,11 +49,11 @@ void callback(char *topic, byte *message, unsigned int length) {
     if (String(topic) == "esp32/input") {
         Serial.print("Changing output to ");
         if (messageTemp == "on") {
-            Serial.println("on");
-            digitalWrite(lucPin, HIGH);
+            setLuc(HIGH);
         } else if (messageTemp == "off") {
-            Serial.println("off");
-            digitalWrite(lucPin, LOW);
+            setLuc(LOW);
+        } else if (messageTemp == "toggle") {
+            toggleLuc();
         }
     }
 }
@@ -83,16 +93,7 @@ boolean reconnect() {
     return client.connected();
 }
 
-void setLuc(bool state) {
-    digitalWrite(lucPin, state);
-	Serial.println(state ? "on" : "off");
-}
 
-void toggleLuc() {
-	lucState = !lucState;
-    digitalWrite(lucPin, lucState);
-	Serial.println(lucState ? "on" : "off");
-}
 
 void setup() {
     Serial.begin(115200);
