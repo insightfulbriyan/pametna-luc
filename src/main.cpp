@@ -17,19 +17,55 @@ PubSubClient client(espClient);
 
 long lastReconnectAttempt = 0;
 
-int lucPin = 22;
-bool lucState = LOW;
+class Luc {
+private:
+    int pin;
 
-void setLuc(bool state) {
-    digitalWrite(lucPin, state);
-    Serial.println(state ? "on" : "off");
-}
+public:
+    bool state;
 
-void toggleLuc() {
-    lucState = !lucState;
-    digitalWrite(lucPin, lucState);
-    Serial.println(lucState ? "on" : "off");
-}
+    Luc(int output_pin, int state = LOW) {
+        pin = output_pin;
+        state = state;
+        pinMode(output_pin, OUTPUT);
+        digitalWrite(output_pin, state);
+    }
+
+    void setLuc(bool state) {
+        digitalWrite(pin, state);
+        Serial.println(state ? "on" : "off");
+    }
+
+    void toggleLuc() {
+        state = !state;
+        digitalWrite(pin, state);
+        Serial.println(state ? "on" : "off");
+    }
+};
+
+class Stikalo {
+private:
+    int pin;
+public:
+    int state;
+    int lastRead;
+
+    Stikalo(int input_pin){
+        pin = input_pin;
+        pinMode(input_pin, OUTPUT);
+        state = digitalRead(input_pin);
+        lastRead = millis();
+    }
+
+    bool read(){
+        state = digitalRead(pin);
+        lastRead = millis();
+        return state;
+    }
+};
+
+Luc jaka(22);
+Stikalo btn(10);
 
 void callback(char *topic, byte *message, unsigned int length) {
     Serial.print("Message arrived on topic: ");
@@ -43,18 +79,14 @@ void callback(char *topic, byte *message, unsigned int length) {
     }
     Serial.println();
 
-    // Feel free to add more if statements to control more GPIOs with MQTT
-
-    // If a message is received on the topic esp32/output, you check if the message is either "on" or "off".
-    // Changes the output state according to the message
     if (String(topic) == "esp32/input") {
         Serial.print("Changing output to ");
         if (messageTemp == "on") {
-            setLuc(HIGH);
+            jaka.setLuc(HIGH);
         } else if (messageTemp == "off") {
-            setLuc(LOW);
+            jaka.setLuc(LOW);
         } else if (messageTemp == "toggle") {
-            toggleLuc();
+            jaka.toggleLuc();
         }
     }
 }
@@ -106,18 +138,24 @@ void setup() {
 }
 
 void loop() {
+    long now = millis();
     if (!client.connected()) {
-        long now = millis();
         if (now - lastReconnectAttempt > 5000) {
             lastReconnectAttempt = now;
-            // Attempt to reconnect
             if (reconnect()) {
                 lastReconnectAttempt = 0;
             }
         }
     } else {
-        // Client connected
-
         client.loop();
+    }
+
+    if(now - btn.lastRead > 500){
+        bool old_state = btn.state;
+        delay(100);
+
+        if(old_state != btn.read() && btn.state == true){
+            jaka.toggleLuc();
+        }
     }
 }
