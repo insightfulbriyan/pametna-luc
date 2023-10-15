@@ -18,6 +18,7 @@ PubSubClient client(espClient);
 long lastReconnectAttempt = 0;
 
 int lucPin = 22;
+bool lucState = LOW;
 
 void callback(char *topic, byte *message, unsigned int length) {
     Serial.print("Message arrived on topic: ");
@@ -80,6 +81,17 @@ boolean reconnect() {
     }
 
     return client.connected();
+}
+
+void setLuc(bool state) {
+    digitalWrite(lucPin, state);
+	Serial.println(state ? "on" : "off");
+}
+
+void toggleLuc() {
+	lucState = !lucState;
+    digitalWrite(lucPin, lucState);
+	Serial.println(lucState ? "on" : "off");
 }
 
 void setup() {
