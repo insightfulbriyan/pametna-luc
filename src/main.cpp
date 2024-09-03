@@ -1,138 +1,164 @@
-#include <Arduino.h>
-#include <PubSubClient.h>
 #include <WiFi.h>
+#include <PubSubClient.h>
+#include <AsyncMqttClient.h>
+#include <Ticker.h>
+#include <time.h>
 
-// Replace the next variables with your SSID/Password combination
-char *ssid = "REPLACE_WITH_YOUR_SSID";
-const char *password = "REPLACE_WITH_YOUR_PASSWORD";
+const char* ssid = "your_SSID";
+const char* password = "your_PASSWORD";
 
-// Add your MQTT Broker IP address, example:
-// const char* mqtt_server = "192.168.1.144";
-const char *mqtt_server = "YOUR_MQTT_BROKER_IP_ADDRESS";
-const char *mqtt_usernme = "YOUR_MQTT_BROKER_USERNAME";
-const char *mqtt_password = "YOUR_MQTT_BROKER_PASSWORD";
+IPAddress local_ip;
+
+// GPIO pin you want to control
+const int pin = 5; // Example: GPIO5
+const int buttonPin = 4; // Example: GPIO4 for the external button
+
+// Topics
+const char* set_topic = "esp32/set_pin";
 
 WiFiClient espClient;
-PubSubClient client(espClient);
+PubSubClient mqttClient(espClient);
+AsyncMqttClient mqttBroker;
 
-long lastReconnectAttempt = 0;
+Ticker mqttReconnectTimer;
+Ticker wifiReconnectTimer;
 
-class Luc {
-private:
-    int pin;
+// Time variables
+struct tm timeinfo;
 
-public:
-    bool state;
+// Function prototypes
+void setup_wifi();
+void connectToMqtt();
+void onMqttMessage(char* topic, byte* payload, unsigned int length);
+void checkButton();
+void checkTimeForReset();
+void resetESP32();
 
-    Luc(int output_pin, int state = LOW) {
-        pin = output_pin;
-        state = state;
-        pinMode(output_pin, OUTPUT);
-        digitalWrite(output_pin, state);
-    }
+volatile bool buttonPressed = false;
 
-    void setLuc(bool state) {
-        digitalWrite(pin, state);
-        Serial.println(state ? "on" : "off");
-    }
-
-    void toggleLuc() {
-        state = !state;
-        digitalWrite(pin, state);
-        Serial.println(state ? "on" : "off");
-    }
-};
-
-class Stikalo {
-private:
-    int pin;
-public:
-    int state;
-    int lastRead;
-
-    Stikalo(int input_pin){
-        pin = input_pin;
-        pinMode(input_pin, INPUT_PULLUP);
-        state = !digitalRead(input_pin);
-        lastRead = millis();
-    }
-
-    bool read(){
-        state = !digitalRead(pin);
-        lastRead = millis();
-        return state;
-    }
-};
-
-Luc jaka(22);
-Stikalo btn(10);
-
-void callback(char *topic, byte *message, unsigned int length) {
-    Serial.print("Message arrived on topic: ");
-    Serial.print(topic);
-    Serial.print(". Message: ");
-    String messageTemp;
-
-    for (int i = 0; i < length; i++) {
-        Serial.print((char)message[i]);
-        messageTemp += (char)message[i];
-    }
-    Serial.println();
-
-    if (String(topic) == "esp32/input") {
-        Serial.print("Changing output to ");
-        if (messageTemp == "on") {
-            jaka.setLuc(HIGH);
-        } else if (messageTemp == "off") {
-            jaka.setLuc(LOW);
-        } else if (messageTemp == "toggle") {
-            jaka.toggleLuc();
-        }
-    }
-}
-
-boolean reconnect() {
-    Serial.println("Reconnection attemp");
-    if (client.connect("ESP32", mqtt_usernme, mqtt_password)) {
-        Serial.println("connected");
-        client.subscribe("esp32/input");
-        client.publish("esp32/output", "hello world");
-    } else {
-        Serial.print("failed, rc=");
-        Serial.print(client.state());
-        Serial.println(" try again in 5 seconds");
-    }
-
-    return client.connected();
+void IRAM_ATTR handleButtonPress() {
+  buttonPressed = true;
 }
 
 void setup() {
-    Serial.begin(115200);
-    client.setServer(mqtt_server, 8883);
-    client.setCallback(callback);
-    WiFi.begin(ssid, password);
-    delay(1000);
+  Serial.begin(115200);
 
+  // Initialize GPIO
+  pinMode(pin, OUTPUT);
+  pinMode(buttonPin, INPUT_PULLUP); // Button with pull-up resistor
 
-    lastReconnectAttempt = 0;
+  attachInterrupt(buttonPin, handleButtonPress, FALLING);
+
+  // Connect to WiFi
+  setup_wifi();
+
+  // Setup MQTT broker
+  mqttBroker.onClientConnected([](void*, AsyncMqttClientClient*) {
+    Serial.println("Client connected to MQTT broker");
+  });
+  mqttBroker.setServer(local_ip, 1883);
+  mqttBroker.begin();
+
+  // Setup MQTT client
+  mqttClient.setServer(local_ip, 1883);
+  mqttClient.setCallback(onMqttMessage);
+
+  connectToMqtt();
+
+  // Setup time
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov"); // Set up NTP
+}
+
+void setup_wifi() {
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+
+  WiFi.begin(ssid, password);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  
+  Serial.println("");
+  Serial.println("WiFi connected");
+  
+  local_ip = WiFi.localIP();
+  Serial.print("IP address: ");
+  Serial.println(local_ip);
+}
+
+void connectToMqtt() {
+  Serial.println("Connecting to MQTT...");
+
+  while (!mqttClient.connected()) {
+    if (mqttClient.connect("ESP32Client")) {
+      Serial.println("Connected to MQTT broker");
+      mqttClient.subscribe(set_topic, 0);
+    } else {
+      Serial.print("Failed to connect, retrying in 5 seconds - state: ");
+      Serial.println(mqttClient.state());
+      delay(5000);
+    }
+  }
+}
+
+void onMqttMessage(char* topic, byte* payload, unsigned int length) {
+  Serial.print("Message arrived [");
+  Serial.print(topic);
+  Serial.print("] ");
+
+  String message;
+  for (unsigned int i = 0; i < length; i++) {
+    message += (char)payload[i];
+  }
+  Serial.println(message);
+
+  if (String(topic) == set_topic) {
+    if (message == "ON") {
+      digitalWrite(pin, HIGH);
+    } else if (message == "OFF") {
+      digitalWrite(pin, LOW);
+    }
+  }
+}
+
+void checkButton() {
+  if (buttonPressed) {
+    buttonPressed = false;
+    // Toggle the state of the pin
+    digitalWrite(pin, !digitalRead(pin));
+
+    // Optional: Publish the new state to the MQTT topic
+    if (digitalRead(pin) == HIGH) {
+      mqttClient.publish(set_topic, "ON");
+    } else {
+      mqttClient.publish(set_topic, "OFF");
+    }
+  }
+}
+
+void checkTimeForReset() {
+  if (getLocalTime(&timeinfo)) {
+    // Check if it's noon
+    if (timeinfo.tm_hour == 12 && timeinfo.tm_min == 0) {
+      resetESP32();
+    }
+  }
+}
+
+void resetESP32() {
+  Serial.println("Resetting ESP32...");
+  ESP.restart();
 }
 
 void loop() {
-    long now = millis();
-    if (!client.connected()) {
-        if (now - lastReconnectAttempt > 5000) {
-            reconnect();
-            lastReconnectAttempt = millis();
-        }
-    } else {
-        client.loop();
-    }
+  if (!mqttClient.connected()) {
+    connectToMqtt();
+  }
+  mqttClient.loop();
 
-    if(now - btn.lastRead > 300){
-        bool old_state = btn.state;
-
-        if(old_state != btn.read() && btn.state == true){
-            jaka.toggleLuc();
-        }
-    }
+  checkButton();
+  checkTimeForReset();
 }
